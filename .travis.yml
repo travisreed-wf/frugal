@@ -25,8 +25,8 @@ install:
   - go get github.com/tools/godep
 
 script:
-  - cd $TRAVIS_BUILD_DIR && godep restore && godep go test ./test -race
-  - cd $TRAVIS_BUILD_DIR/lib/go && godep restore && godep go test -race
+  - cd $TRAVIS_BUILD_DIR && go test ./test -race
+  - cd $TRAVIS_BUILD_DIR/lib/go && go test -race
   - cd $TRAVIS_BUILD_DIR/lib/python
   - workon py2 && make xunit-py2 flake8-py2
   - workon py3 && make xunit-py3 flake8-py3
