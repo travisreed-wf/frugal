@@ -1,5 +1,7 @@
 # Frugal
 
+travis personal account
+
 ![Build Status](https://travis-ci.org/Workiva/frugal.svg?branch=develop)
 
 Frugal is an extension of [Apache Thrift](https://thrift.apache.org/) which
