@@ -280,3 +280,5 @@ IDL has a vendor path set for the Go namespace. Instead, the generated code for
 Frugal is intended to be a superset of Thrift, meaning valid Thrift should be
 valid Frugal. File an issue if you discover an inconsistency in compatibility
 with the IDL.
+
+Testing by travis reed
