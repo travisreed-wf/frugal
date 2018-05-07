@@ -267,7 +267,7 @@ public class FNatsServer implements FServer {
                 return;
             }
 
-            executorService.submit(
+            executorService.execute(
                     new Request(message.getData(), System.currentTimeMillis(), message.getReplyTo(),
                             highWatermark, inputProtoFactory, outputProtoFactory, processor, conn));
         };
@@ -327,7 +327,7 @@ public class FNatsServer implements FServer {
                     conn.flush();
                 } catch (Exception ignored) {
                 }
-                throw e;
+                return;
             }
 
             if (!output.hasWriteData()) {

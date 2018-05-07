@@ -286,6 +286,12 @@ func (g *Generator) generateEnumConstFromValue(t *parser.Type, value int) string
 	panic("value not found")
 }
 
+// quote creates a Java string literal for a string.
+func (g *Generator) quote(s string) string {
+	// For now, just use Go quoting rules.
+	return strconv.Quote(s)
+}
+
 func (g *Generator) generateConstantValueRec(t *parser.Type, value interface{}) (string, string) {
 	underlyingType := g.Frugal.UnderlyingType(t)
 
@@ -331,7 +337,7 @@ func (g *Generator) generateConstantValueRec(t *parser.Type, value interface{}) 
 		case "double":
 			return "", fmt.Sprintf("%v", value)
 		case "string":
-			return "", fmt.Sprintf("%v", strconv.Quote(value.(string)))
+			return "", g.quote(value.(string))
 		case "binary":
 			return "", fmt.Sprintf("java.nio.ByteBuffer.wrap(\"%v\".getBytes())", value)
 		}
@@ -357,9 +363,7 @@ func (g *Generator) GenerateEnum(enum *parser.Enum) error {
 		if idx == len(enum.Values)-1 {
 			terminator = ";"
 		}
-		if value.Comment != nil {
-			contents += g.GenerateBlockComment(value.Comment, tab)
-		}
+		contents += g.generateCommentWithDeprecated(value.Comment, tab, value.Annotations)
 		contents += fmt.Sprintf(tab+"%s(%d)%s\n", value.Name, value.Value, terminator)
 	}
 	contents += "\n"
@@ -537,6 +541,7 @@ func (g *Generator) generateUnionFieldConstructors(union *parser.Struct) string 
 	contents := ""
 
 	for _, field := range union.Fields {
+		contents += g.generateCommentWithDeprecated(field.Comment, tab, field.Annotations)
 		contents += fmt.Sprintf(tab+"public static %s %s(%s value) {\n",
 			union.Name, field.Name, g.getJavaTypeFromThriftType(field.Type))
 		contents += fmt.Sprintf(tabtab+"%s x = new %s();\n", union.Name, union.Name)
@@ -704,6 +709,9 @@ func (g *Generator) generateUnionGetSetFields(union *parser.Struct) string {
 		javaType := g.getJavaTypeFromThriftType(field.Type)
 
 		// get
+		if field.Annotations.IsDeprecated() {
+			contents += tab + "@Deprecated\n"
+		}
 		contents += fmt.Sprintf(tab+"public %s get%s() {\n", javaType, titleName)
 		contents += fmt.Sprintf(tabtab+"if (getSetField() == _Fields.%s) {\n", constantName)
 		contents += fmt.Sprintf(tabtabtab+"return (%s)getFieldValue();\n", containerType(javaType))
@@ -713,6 +721,9 @@ func (g *Generator) generateUnionGetSetFields(union *parser.Struct) string {
 		contents += tab + "}\n\n"
 
 		// set
+		if field.Annotations.IsDeprecated() {
+			contents += tab + "@Deprecated\n"
+		}
 		contents += fmt.Sprintf(tab+"public void set%s(%s value) {\n", titleName, javaType)
 		if !g.isJavaPrimitive(field.Type) {
 			contents += tabtab + "if (value == null) throw new NullPointerException();\n"
@@ -729,6 +740,9 @@ func (g *Generator) generateUnionIsSetFields(union *parser.Struct) string {
 	contents := ""
 
 	for _, field := range union.Fields {
+		if field.Annotations.IsDeprecated() {
+			contents += tab + "@Deprecated\n"
+		}
 		contents += fmt.Sprintf(tab+"public boolean isSet%s() {\n", strings.Title(field.Name))
 		contents += fmt.Sprintf(tabtab+"return setField_ == _Fields.%s;\n", toConstantName(field.Name))
 		contents += tab + "}\n\n"
@@ -913,15 +927,19 @@ func (g *Generator) generateSchemeMap(s *parser.Struct) string {
 func (g *Generator) generateInstanceVars(s *parser.Struct) string {
 	contents := ""
 	for _, field := range s.Fields {
-		if field.Comment != nil {
-			contents += g.GenerateBlockComment(field.Comment, tab)
-		}
-		modifier := "required"
-		if field.Modifier == parser.Optional {
+		contents += g.generateCommentWithDeprecated(field.Comment, tab, field.Annotations)
+		modifier := ""
+		if field.Modifier == parser.Required {
+			modifier = "required"
+		} else if field.Modifier == parser.Optional {
 			modifier = "optional"
 		}
-		contents += fmt.Sprintf(tab+"public %s %s; // %s\n",
-			g.getJavaTypeFromThriftType(field.Type), field.Name, modifier)
+		modifierComment := ""
+		if modifier != "" {
+			modifierComment = " // " + modifier
+		}
+		contents += fmt.Sprintf(tab+"public %s %s;%s\n",
+			g.getJavaTypeFromThriftType(field.Type), field.Name, modifierComment)
 	}
 	return contents
 }
@@ -1138,6 +1156,9 @@ func (g *Generator) generateClear(s *parser.Struct) string {
 
 func (g *Generator) generateContainerGetSize(field *parser.Field) string {
 	contents := ""
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public int get%sSize() {\n", strings.Title(field.Name))
 	contents += fmt.Sprintf(tabtab+"return (this.%s == null) ? 0 : this.%s.size();\n", field.Name, field.Name)
 	contents += fmt.Sprintf(tab + "}\n\n")
@@ -1153,6 +1174,9 @@ func (g *Generator) generateContainerIterator(field *parser.Field) string {
 	}
 
 	contents := ""
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public java.util.Iterator<%s> get%sIterator() {\n",
 		containerType(g.getJavaTypeFromThriftType(underlyingType.ValueType)), strings.Title(field.Name))
 	contents += fmt.Sprintf(tabtab+"return (this.%s == null) ? null : this.%s.iterator();\n", field.Name, field.Name)
@@ -1166,6 +1190,9 @@ func (g *Generator) generateContainerAddTo(field *parser.Field) string {
 	fieldTitle := strings.Title(field.Name)
 
 	contents := ""
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 
 	if underlyingType.Name == "list" || underlyingType.Name == "set" {
 		contents += fmt.Sprintf(tab+"public void addTo%s(%s elem) {\n", fieldTitle, valType)
@@ -1216,6 +1243,9 @@ func (g *Generator) generateGetField(field *parser.Field) string {
 	}
 
 	accessPrefix := g.getAccessorPrefix(field.Type)
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public %s %s%s() {\n", returnType, accessPrefix, fieldTitle)
 	if underlyingType.Name == "binary" {
 		contents += fmt.Sprintf(tabtab+"set%s(org.apache.thrift.TBaseHelper.rightSize(%s));\n",
@@ -1243,6 +1273,9 @@ func (g *Generator) generateSetField(structName string, field *parser.Field) str
 
 	if underlyingType.Name == "binary" {
 		// Special additional binary set
+		if field.Annotations.IsDeprecated() {
+			contents += tab + "@Deprecated\n"
+		}
 		contents += fmt.Sprintf(tab+"public %s set%s(byte[] %s) {\n", structName, fieldTitle, field.Name)
 		contents += fmt.Sprintf(tabtab+"this.%s = %s == null ? (java.nio.ByteBuffer)null : java.nio.ByteBuffer.wrap(Arrays.copyOf(%s, %s.length));\n",
 			field.Name, field.Name, field.Name, field.Name)
@@ -1252,6 +1285,9 @@ func (g *Generator) generateSetField(structName string, field *parser.Field) str
 
 	if field.Comment != nil {
 		contents += g.GenerateBlockComment(field.Comment, tab)
+	}
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
 	}
 	contents += fmt.Sprintf(tab+"public %s set%s(%s %s) {\n",
 		structName, fieldTitle, g.getJavaTypeFromThriftType(field.Type), field.Name)
@@ -1276,6 +1312,9 @@ func (g *Generator) generateSetField(structName string, field *parser.Field) str
 func (g *Generator) generateUnsetField(s *parser.Struct, field *parser.Field) string {
 	contents := ""
 
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public void unset%s() {\n", strings.Title(field.Name))
 	if g.isJavaPrimitive(field.Type) {
 		isSetType, _ := g.getIsSetType(s)
@@ -1302,6 +1341,9 @@ func (g *Generator) getIsSetID(fieldName string) string {
 func (g *Generator) generateIsSetField(s *parser.Struct, field *parser.Field) string {
 	contents := ""
 	contents += fmt.Sprintf(tab+"/** Returns true if field %s is set (has been assigned a value) and false otherwise */\n", field.Name)
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public boolean isSet%s() {\n", strings.Title(field.Name))
 	if g.isJavaPrimitive(field.Type) {
 		isSetType, _ := g.getIsSetType(s)
@@ -1323,6 +1365,9 @@ func (g *Generator) generateIsSetField(s *parser.Struct, field *parser.Field) st
 
 func (g *Generator) generateSetIsSetField(s *parser.Struct, field *parser.Field) string {
 	contents := ""
+	if field.Annotations.IsDeprecated() {
+		contents += tab + "@Deprecated\n"
+	}
 	contents += fmt.Sprintf(tab+"public void set%sIsSet(boolean value) {\n", strings.Title(field.Name))
 	if g.isJavaPrimitive(field.Type) {
 		isSetType, _ := g.getIsSetType(s)
@@ -2645,6 +2690,27 @@ func (g *Generator) GenerateService(file *os.File, s *parser.Service) error {
 	return err
 }
 
+func (g *Generator) generateCommentWithDeprecated(comment []string, indent string, anns parser.Annotations) string {
+	fullComment := []string{}
+	if comment != nil {
+		fullComment = append(fullComment, comment...)
+	}
+
+	deprecationValue, deprecated := anns.Deprecated()
+	if deprecated && deprecationValue != "" {
+		fullComment = append(fullComment, fmt.Sprintf("@deprecated %s", deprecationValue))
+	}
+
+	contents := ""
+	if len(fullComment) != 0 {
+		contents += g.GenerateBlockComment(fullComment, indent)
+	}
+	if deprecated {
+		contents += indent + "@Deprecated\n"
+	}
+	return contents
+}
+
 func (g *Generator) generateServiceInterface(service *parser.Service) string {
 	contents := ""
 	if service.Comment != nil {
@@ -2657,24 +2723,7 @@ func (g *Generator) generateServiceInterface(service *parser.Service) string {
 		contents += tab + "public interface Iface {\n\n"
 	}
 	for _, method := range service.Methods {
-		comment := []string{}
-		if method.Comment != nil {
-			comment = append(comment, method.Comment...)
-		}
-
-		deprecationValue, deprecated := method.Annotations.Deprecated()
-		if deprecated && deprecationValue != "" {
-			comment = append(comment, fmt.Sprintf("@deprecated %s", deprecationValue))
-		}
-
-		if len(comment) != 0 {
-			contents += g.GenerateBlockComment(comment, tabtab)
-		}
-
-		if deprecated {
-			contents += tabtab + "@Deprecated\n"
-		}
-
+		contents += g.generateCommentWithDeprecated(method.Comment, tabtab, method.Annotations)
 		contents += fmt.Sprintf(tabtab+"public %s %s(FContext ctx%s) %s;\n\n",
 			g.generateReturnValue(method), method.Name, g.generateArgs(method.Arguments, false), g.generateExceptions(method.Exceptions))
 	}
@@ -2965,7 +3014,7 @@ func (g *Generator) generateServer(service *parser.Service) string {
 		if len(method.Annotations) > 0 {
 			contents += tabtabtab + fmt.Sprintf("java.util.Map<String, String> %sMap = new java.util.HashMap<>();\n", method.Name)
 			for _, annotation := range method.Annotations {
-				contents += tabtabtab + fmt.Sprintf("%sMap.put(\"%s\", \"%s\");\n", method.Name, annotation.Name, annotation.Value)
+				contents += tabtabtab + fmt.Sprintf("%sMap.put(\"%s\", %s);\n", method.Name, annotation.Name, g.quote(annotation.Value))
 			}
 			contents += tabtabtab + fmt.Sprintf("annotationsMap.put(\"%s\", %sMap);\n", parser.LowercaseFirstLetter(method.Name), method.Name)
 		}
@@ -3035,7 +3084,7 @@ func (g *Generator) generateServer(service *parser.Service) string {
 		contents += tabtabtabtab + "} catch (TException e) {\n"
 		contents += tabtabtabtabtab + "synchronized (WRITE_LOCK) {\n"
 		contents += tabtabtabtabtabtab + fmt.Sprintf(
-			"e = writeApplicationException(ctx, oprot, TApplicationExceptionType.INTERNAL_ERROR, \"%s\", \"Internal error processing %s: \" + e.getMessage());\n",
+			"e = (TApplicationException) writeApplicationException(ctx, oprot, TApplicationExceptionType.INTERNAL_ERROR, \"%s\", \"Internal error processing %s: \" + e.getMessage()).initCause(e);\n",
 			methodLower, method.Name)
 		contents += tabtabtabtabtab + "}\n"
 		contents += tabtabtabtabtab + "throw e;\n"
