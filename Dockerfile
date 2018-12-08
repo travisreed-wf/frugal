@@ -35,6 +35,6 @@ ARG BUILD_ARTIFACTS_ARTIFACTORY=/go/src/github.com/Workiva/frugal/frugal-*.jar
 ARG BUILD_ARTIFACTS_PUB=/go/src/github.com/Workiva/frugal/frugal.pub.tgz
 ARG BUILD_ARTIFACTS_TEST_RESULTS=/go/src/github.com/Workiva/frugal/test_results/*
 
-FROM scratch
+FROM alpine:latest
 COPY --from=build /go/src/github.com/Workiva/frugal/frugal /bin/frugal
 ENTRYPOINT ["frugal"]
